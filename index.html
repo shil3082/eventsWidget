@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meine Termine</title>
+    <style>
+        body {
+            font-family: 'Helvetica', sans-serif; /* Verwende Inter, da Canva es oft nutzt */
+            margin: 0;
+            padding: 15px;
+            background-color: transparent; /* Wichtig für die Einbettung in Canva */
+            color: #333;
+            line-height: 1.6;
+            overflow-y: auto; /* Ermöglicht Scrollen innerhalb des Widgets, falls viele Termine */
+        }
+        .events-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px; /* Abstand zwischen den Terminen */
+        }
+        .event-item {
+            background-color: #ffffff;
+            border-radius: 12px; /* Abgerundete Ecken */
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Leichter Schatten */
+            display: flex;
+            flex-direction: column; /* Standardmäßig untereinander */
+            transition: transform 0.2s ease-in-out; /* Animation beim Hover */
+        }
+        .event-item:hover {
+            transform: translateY(-3px); /* Leichter "Lift"-Effekt beim Hover */
+        }
+        .event-header {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 10px;
+        }
+        .event-date {
+            font-size: 1.1em;
+            font-weight: 700; /* Bold */
+            color: #6a7e80; /* Eine Akzentfarbe */
+            margin-bottom: 5px;
+        }
+        .event-time {
+            font-size: 0.9em;
+            color: #666;
+        }
+        .event-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .event-location {
+            font-size: 0.95em;
+            color: #555;
+            margin-bottom: 10px;
+        }
+        .event-link {
+            display: inline-block;
+            background-color: #6a7e80; /* Standard-Link-Farbe */
+            color: white;
+            padding: 8px 15px;
+            border-radius: 8px; /* Abgerundete Ecken für den Button */
+            text-decoration: none;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+            align-self: flex-start; /* Button linksbündig */
+        }
+        .event-link:hover {
+            background-color: #6a7e80;
+        }
+        .loading-message, .error-message {
+            text-align: center;
+            padding: 20px;
+            color: #777;
+        }
+
+        /* Anpassungen für größere Bildschirme (optional, für nebeneinander) */
+        @media (min-width: 768px) {
+            .event-item {
+                flex-direction: row; /* Datum/Uhrzeit und Details nebeneinander */
+                align-items: center;
+                justify-content: space-between;
+            }
+            .event-header {
+                flex: 0 0 150px; /* Feste Breite für Datum/Uhrzeit */
+                text-align: left;
+                margin-bottom: 0;
+                margin-right: 20px;
+            }
+            .event-details {
+                flex-grow: 1;
+            }
+            .event-link {
+                margin-left: auto; /* Button nach rechts schieben */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="events-container" id="eventsContainer">
+        <p class="loading-message">Termine werden geladen...</p>
+    </div>
+
+    <script>
+        console.log("--> Skript beginnt zu laden!"); // Diese Zeile bleibt hier
+
+        // WICHTIG: Ersetze diese URL durch die von Google Sheets generierte CSV-URL aus Schritt 1
+        const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRkkVRQefk4AcGbZXRvJR7VoS8vRbEFQ-aPfpuofYkGoOaSdm82pxPzpWyb7UH5ZrI8lSHkCJVKOQHb/pub?gid=0&single=true&output=csv';
+
+        async function fetchAndDisplayEvents() {
+            const container = document.getElementById('eventsContainer');
+            // Die Lade-Nachricht steht bereits im HTML, daher ist die Zeile hier optional, aber unschädlich
+            container.innerHTML = '<p class="loading-message">Termine werden geladen...</p>';
+
+            try {
+                const response = await fetch(GOOGLE_SHEET_CSV_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP-Fehler! Status: ${response.status}`);
+                }
+
+                const csvText = await response.text();
+                console.log("--> Roh-CSV-Text (erste 200 Zeichen):", csvText.substring(0, 200)); // Debugging-Log hierher verschoben
+
+                const events = parseCSV(csvText);
+                console.log("--> Geparsed Events (alle):", events); // Debugging-Log hierher verschoben
+
+                // Hier beginnt der Debug-Bereich, der vorher falsch platziert war
+                const now = new Date();
+                console.log("--> Aktuelles Datum/Zeit (lokal):", now);
+
+                const futureEvents = events.filter(event => {
+                    const eventDate = new Date(event.Datum);
+                    console.log("    Event Datum Roh:", event.Datum, "-> Geparsed Datum Objekt:", eventDate);
+                    if (event.Uhrzeit) {
+                        const [hours, minutes] = event.Uhrzeit.split(':').map(Number);
+                        eventDate.setHours(hours, minutes, 0, 0);
+                    } else {
+                        eventDate.setHours(23, 59, 59, 999);
+                    }
+                    const isFuture = eventDate >= now;
+                    console.log("    Vergleich:", eventDate.toLocaleString(), "vs", now.toLocaleString(), "-> Ist zukünftig?", isFuture);
+                    return isFuture;
+                });
+                console.log("--> Zukünftige Events nach Filter:", futureEvents);
+                // Ende des verschobenen Debug-Bereichs
+
+                renderEvents(events); // Ruft die Funktion auf, die die HTML-Elemente rendert
+
+            } catch (error) {
+                console.error('Fehler beim Laden oder Parsen der Termine:', error);
+                container.innerHTML = '<p class="error-message">Termine konnten nicht geladen werden. Bitte versuche es später erneut.</p>';
+            }
+        }
+
+        function parseCSV(csv) {
+            const lines = csv.split('\n').filter(line => line.trim() !== '');
+            if (lines.length === 0) return [];
+
+            const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
+            const data = lines.slice(1).map(line => {
+                const values = line.split(',').map(value => value.trim().replace(/^"|"$/g, ''));
+                let obj = {};
+                headers.forEach((header, index) => {
+                    obj[header] = values[index] || '';
+                });
+                return obj;
+            });
+            return data;
+        }
+
+        function renderEvents(events) {
+            const container = document.getElementById('eventsContainer');
+            container.innerHTML = ''; // Vorherigen Inhalt entfernen
+
+            if (events.length === 0) {
+                container.innerHTML = '<p class="loading-message">Keine bevorstehenden Termine.</p>';
+                return;
+            }
+
+            // Optional: Nur zukünftige Termine anzeigen und sortieren
+            const now = new Date();
+            const futureEvents = events.filter(event => {
+                const eventDate = new Date(event.Datum);
+                // Berücksichtige auch die Uhrzeit für den Vergleich, falls vorhanden
+                if (event.Uhrzeit) {
+                    const [hours, minutes] = event.Uhrzeit.split(':').map(Number);
+                    eventDate.setHours(hours, minutes, 0, 0);
+                } else {
+                    // Wenn keine Uhrzeit, setze auf Ende des Tages, um den ganzen Tag zu erfassen
+                    eventDate.setHours(23, 59, 59, 999);
+                }
+                return eventDate >= now;
+            });
+
+            futureEvents.sort((a, b) => new Date(a.Datum) - new Date(b.Datum)); // Nach Datum aufsteigend sortieren
+
+            if (futureEvents.length === 0) {
+                container.innerHTML = '<p class="loading-message">Derzeit keine zukünftigen Termine.</p>';
+                return;
+            }
+
+            futureEvents.forEach(event => {
+                const eventItem = document.createElement('div');
+                eventItem.className = 'event-item';
+
+                // Datum formatieren für bessere Lesbarkeit (optional, aber empfohlen)
+                const eventDateObj = new Date(event.Datum);
+                const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+                const formattedDate = eventDateObj.toLocaleDateString('de-DE', options);
+
+                const displayTime = event.Uhrzeit ? `, ${event.Uhrzeit} Uhr` : '';
+                // Korrigierte Logik für displayLocation - es war event.Ort_Name, event.Ort_Name
+                const displayLocation = (event.Ort_Name && event.Ort_Stadt) ? `${event.Ort_Name}, ${event.Ort_Stadt}` : event.Ort_Name || event.Ort_Stadt || '';
+
+
+                eventItem.innerHTML = `
+                    <div class="event-header">
+                        <div class="event-date">${formattedDate}</div>
+                        ${event.Uhrzeit ? `<div class="event-time">${event.Uhrzeit} Uhr</div>` : ''}
+                    </div>
+                    <div class="event-details">
+                        <div class="event-title">${event.Veranstaltungstitel}</div>
+                        <div class="event-location">${displayLocation}</div>
+                        ${event.Link_Veranstalterseite ? `<a href="${event.Link_Veranstalterseite}" target="_blank" class="event-link">Weitere Infos</a>` : ''}
+                    </div>
+                `;
+                container.appendChild(eventItem);
+            });
+        }
+
+        // Starte den Prozess, wenn das Dokument geladen ist
+        // document.addEventListener('DOMContentLoaded', fetchAndDisplayEvents); // DIESE ZEILE BLEIBT AUSKOMMENTIERT
+        fetchAndDisplayEvents(); // DIESE ZEILE MUSS AKTIV SEIN UND DIE FUNKTION DIREKT AUFRUFEN!
+    </script>
+</body>
+</html>
